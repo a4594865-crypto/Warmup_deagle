@@ -1,4 +1,4 @@
-﻿using CounterStrikeSharp.API;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
@@ -9,8 +9,8 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO";
         public override string ModuleName => "Warmup_deagle";
-        public override string ModuleVersion => "1.0.2";
-        public override string ModuleDescription => "Warmup Deagle Only with config";
+        public override string ModuleVersion => "1.0.3"; // 版本號微調
+        public override string ModuleDescription => "Warmup Deagle Only - Compatible Version";
 
         private bool _warmupMessageSent = false;
         private static HashSet<string> AllowedWeapons = new();
@@ -19,9 +19,12 @@ namespace deagle_only
         {
             LoadConfig();
 
+            // 註冊事件：玩家出生與回合開始
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
             RegisterEventHandler<EventRoundStart>(OnRoundStart);
-            RegisterListener<Listeners.OnTick>(OnTick);
+            
+            // 已移除 RegisterListener<Listeners.OnTick>(OnTick);
+            // 這樣就不會每幀強制刪除玩家身上的其他武器，增加與其他插件的相容性。
         }
 
         private void LoadConfig()
@@ -56,7 +59,7 @@ namespace deagle_only
             }
 
             Logger.LogInformation(
-                $"[Warmup_deagle] Allowed weapons: {string.Join(", ", AllowedWeapons)}"
+                $"[Warmup_deagle] Allowed weapons loaded: {string.Join(", ", AllowedWeapons)}"
             );
         }
 
@@ -85,81 +88,43 @@ namespace deagle_only
                 return HookResult.Continue;
 
             Server.PrintToChatAll($" {ChatColors.Green}[Warmup]{ChatColors.Default} Round is {ChatColors.Red}DEAGLE ONLY");
-            Server.PrintToChatAll($" {ChatColors.Green}[Warmup]{ChatColors.Default} Round is {ChatColors.Red}DEAGLE ONLY");
-            Server.PrintToChatAll($" {ChatColors.Green}[Warmup]{ChatColors.Default} Round is {ChatColors.Red}DEAGLE ONLY");
             _warmupMessageSent = true;
             return HookResult.Continue;
         }
 
-        private static void OnTick()
+        private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
         {
             if (!IsWarmupActive())
-                return;
+                return HookResult.Continue;
 
-            foreach (var player in Utilities.GetPlayers())
+            var player = @event.Userid;
+            if (player == null || !player.IsValid)
+                return HookResult.Continue;
+
+            // 使用 NextFrame 確保在引擎處理完預設出生邏輯後再執行
+            Server.NextFrame(() =>
             {
                 var pawn = player.PlayerPawn?.Value;
-if (pawn == null || (LifeState_t)pawn.LifeState != LifeState_t.LIFE_ALIVE)
-    continue;
+                if (pawn == null)
+                    return;
 
+                if ((LifeState_t)pawn.LifeState != LifeState_t.LIFE_ALIVE)
+                    return;
 
-                var weaponServices = player.PlayerPawn?.Value?.WeaponServices;
-                if (weaponServices?.MyWeapons == null)
-                    continue;
+                // 先移除身上非許可的武器
+                RemoveNonAllowedWeapons(player);
 
-                foreach (var weapon in weaponServices.MyWeapons)
+                // 給予配置中允許的武器
+                foreach (var weapon in AllowedWeapons)
                 {
-                    if (weapon?.IsValid != true || weapon.Value == null)
-                        continue;
-
-                    var name = weapon.Value.DesignerName;
-
-                    if (!AllowedWeapons.Contains(name))
-                    {
-                        weapon.Value.AddEntityIOEvent(
-                            "Kill",
-                            weapon.Value,
-                            null,
-                            "",
-                            0.0f
-                        );
-                    }
+                    player.GiveNamedItem(weapon);
                 }
-            }
+            });
+
+            return HookResult.Continue;
         }
 
-        private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
-{
-    if (!IsWarmupActive())
-        return HookResult.Continue;
-
-    var player = @event.Userid;
-    if (player == null || !player.IsValid)
-        return HookResult.Continue;
-
-    Server.NextFrame(() =>
-    {
-        var pawn = player.PlayerPawn?.Value;
-        if (pawn == null)
-            return;
-
-        if (!pawn.LifeState.Equals(LifeState_t.LIFE_ALIVE))
-            return;
-
-        RemoveAllWeapons(player);
-
-        foreach (var weapon in AllowedWeapons)
-        {
-            player.GiveNamedItem(weapon);
-        }
-    });
-
-    return HookResult.Continue;
-}
-
-
-
-        private static void RemoveAllWeapons(CCSPlayerController player)
+        private static void RemoveNonAllowedWeapons(CCSPlayerController player)
         {
             var weaponServices = player.PlayerPawn?.Value?.WeaponServices;
             if (weaponServices?.MyWeapons == null)
@@ -172,16 +137,17 @@ if (pawn == null || (LifeState_t)pawn.LifeState != LifeState_t.LIFE_ALIVE)
 
                 var name = weapon.Value.DesignerName;
 
-                if (AllowedWeapons.Contains(name))
-                    continue;
-
-                weapon.Value.AddEntityIOEvent(
-                    "Kill",
-                    weapon.Value,
-                    null,
-                    "",
-                    0.1f
-                );
+                // 如果是設定檔中「不允許」的武器，才將其移除
+                if (!AllowedWeapons.Contains(name))
+                {
+                    weapon.Value.AddEntityIOEvent(
+                        "Kill",
+                        weapon.Value,
+                        null,
+                        "",
+                        0.0f
+                    );
+                }
             }
         }
     }
