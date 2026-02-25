@@ -1,0 +1,33 @@
+name: Build Warmup_deagle
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build Plugin
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Warmup_deagle_Package
+          # 這裡的 path 必須對應你專案編譯後的輸出路徑
+          path: bin/Release/net8.0/
