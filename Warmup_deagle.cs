@@ -87,7 +87,7 @@ namespace deagle_only
             if (_warmupMessageSent)
                 return HookResult.Continue;
 
-            Server.PrintToChatAll($" {ChatColors.Green}[ 熱身模式 ]{ChatColors.Default} 現在處於 {ChatColors.Lime}熱身緩場 {ChatColors.Default}，換槍需打指令");
+            Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現在處於 {ChatColors.Lime}熱身緩場 {ChatColors.Default}，換槍需打指令");
             _warmupMessageSent = true;
             return HookResult.Continue;
         }
