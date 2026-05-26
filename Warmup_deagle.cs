@@ -12,8 +12,8 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO";
         public override string ModuleName => "Warmup_deagle";
-        public override string ModuleVersion => "1.0.6"; // 升級版本號
-        public override string ModuleDescription => "Warmup Deagle Only - Fixed with Generic Event";
+        public override string ModuleVersion => "1.0.7"; // 升級版本號
+        public override string ModuleDescription => "Warmup Deagle Only - Fixed with CGameEvent";
 
         private bool _warmupMessageSent = false;
         private static HashSet<string> AllowedWeapons = new();
@@ -26,8 +26,8 @@ namespace deagle_only
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
             RegisterEventHandler<EventRoundStart>(OnRoundStart);
             
-            // 💡 終極修正：直接監聽原生字串事件 "warmup_start"，避開所有類別名稱找不到的坑！
-            RegisterEventHandler((GameEvent @event, GameEventInfo info) => {
+            // 💡 修正：將 GameEvent 改為官方正確的 CGameEvent 型別
+            RegisterEventHandler((CGameEvent @event, GameEventInfo info) => {
                 _warmupMessageSent = false;
                 return HookResult.Continue;
             }, "warmup_start");
