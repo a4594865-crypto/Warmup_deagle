@@ -12,8 +12,8 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO";
         public override string ModuleName => "Warmup_deagle";
-        public override string ModuleVersion => "1.0.4"; // 升級版本號
-        public override string ModuleDescription => "Warmup Deagle Only - Fixed Message Trigger";
+        public override string ModuleVersion => "1.0.5"; // 升級版本號
+        public override string ModuleDescription => "Warmup Deagle Only - Fixed Event Name";
 
         private bool _warmupMessageSent = false;
         private static HashSet<string> AllowedWeapons = new();
@@ -26,13 +26,13 @@ namespace deagle_only
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
             RegisterEventHandler<EventRoundStart>(OnRoundStart);
             
-            // 核心修正：監聽官方暖身啟動事件，只要開啟暖身，就重置訊息鎖，讓它能重新列印
-            RegisterEventHandler<EventWarmupStart>((@event, info) => {
+            // 💡 修正：官方正確的事件名稱為 EventWarmupPeriodStart
+            RegisterEventHandler<EventWarmupPeriodStart>((@event, info) => {
                 _warmupMessageSent = false;
                 return HookResult.Continue;
             });
 
-            // 保險：換地圖或地圖重載時也重置旗標
+            // 換地圖或地圖重載時也重置旗標
             RegisterEventHandler<EventMapTransition>((@event, info) => {
                 _warmupMessageSent = false;
                 return HookResult.Continue;
@@ -90,19 +90,16 @@ namespace deagle_only
 
         private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
         {
-            // 如果當前根本不是暖身，直接跳出
             if (!IsWarmupActive())
             {
                 return HookResult.Continue;
             }
 
-            // 如果這一輪暖身已經印過訊息了，就跳出
             if (_warmupMessageSent)
                 return HookResult.Continue;
 
-            // 成功印出廣播
-            Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 令");
-            _warmupMessageSent = true; // 
+            Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 指令");
+            _warmupMessageSent = true; 
             return HookResult.Continue;
         }
 
