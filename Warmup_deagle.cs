@@ -9,10 +9,8 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO";
         public override string ModuleName => "Warmup_deagle";
-        public override string ModuleVersion => "1.0.4"; // 版本號微調
+        public override string ModuleVersion => "1.0.3"; // 版本號微調
         public override string ModuleDescription => "Warmup Deagle Only - Compatible Version";
-
-        private bool _warmupMessageSent = false;
         private static HashSet<string> AllowedWeapons = new();
 
         public override void Load(bool hotReload)
@@ -76,43 +74,7 @@ namespace deagle_only
             return proxy?.GameRules?.WarmupPeriod == true;
         }
 
-        private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
-{
-    // 只要回合開始，強制重置鎖，確保下一個進場的人能看到
-    _warmupMessageSent = false;
-    return HookResult.Continue;
-}
-
-private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
-{
-    var player = @event.Userid;
-    if (player == null || !player.IsValid) return HookResult.Continue;
-
-    // 檢查是否為暖場
-    if (!IsWarmupActive()) return HookResult.Continue;
-
-    // 這裡我們只顯示給「剛出生且是暖場期間」的玩家看
-    // 透過對特定玩家發送，解決「只給新玩家看」的問題
-    if (!_warmupMessageSent)
-    {
-        Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 令");
-        _warmupMessageSent = true;
-    }
-
-    Server.NextFrame(() =>
-    {
-        var pawn = player.PlayerPawn?.Value;
-        if (pawn == null || (LifeState_t)pawn.LifeState != LifeState_t.LIFE_ALIVE) return;
-
-        RemoveNonAllowedWeapons(player);
-        foreach (var weapon in AllowedWeapons)
-        {
-            player.GiveNamedItem(weapon);
-        }
-    });
-
-    return HookResult.Continue;
-}
+       
 
         private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
         {
