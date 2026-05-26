@@ -77,28 +77,42 @@ namespace deagle_only
         }
 
         private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
+{
+    // 只要回合開始，強制重置鎖，確保下一個進場的人能看到
+    _warmupMessageSent = false;
+    return HookResult.Continue;
+}
+
+private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
+{
+    var player = @event.Userid;
+    if (player == null || !player.IsValid) return HookResult.Continue;
+
+    // 檢查是否為暖場
+    if (!IsWarmupActive()) return HookResult.Continue;
+
+    // 這裡我們只顯示給「剛出生且是暖場期間」的玩家看
+    // 透過對特定玩家發送，解決「只給新玩家看」的問題
+    if (!_warmupMessageSent)
+    {
+        Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 令");
+        _warmupMessageSent = true;
+    }
+
+    Server.NextFrame(() =>
+    {
+        var pawn = player.PlayerPawn?.Value;
+        if (pawn == null || (LifeState_t)pawn.LifeState != LifeState_t.LIFE_ALIVE) return;
+
+        RemoveNonAllowedWeapons(player);
+        foreach (var weapon in AllowedWeapons)
         {
-            // 🎯 最關鍵改動：新回合一開始，直接無條件解鎖！
-            // 這樣不管是伺服器剛開、換地圖，還是中途指令重置暖場，開關都會被精準擦拭成 false
-            _warmupMessageSent = false;
-
-            // 如果現在「不是」暖場，直接跳出，絕對不印訊息
-            if (!IsWarmupActive())
-            {
-                return HookResult.Continue;
-            }
-
-            // 如果這一局已經印過了，直接跳出 (因為最上面設為了 false，所以暖場第一回合這裡一定能通過)
-            if (_warmupMessageSent)
-                return HookResult.Continue;
-
-            // 當玩家進入遊戲、重置暖場的第一局，完美印出這行
-            Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 令");
-            
-            // 印完立刻上鎖，保證在「這一局暖場內」玩家因為自殺、時間到而重新復活時，不會重複刷屏
-            _warmupMessageSent = true;
-            return HookResult.Continue;
+            player.GiveNamedItem(weapon);
         }
+    });
+
+    return HookResult.Continue;
+}
 
         private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
         {
