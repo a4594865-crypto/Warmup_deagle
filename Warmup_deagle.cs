@@ -12,8 +12,8 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO";
         public override string ModuleName => "Warmup_deagle";
-        public override string ModuleVersion => "1.0.5"; // 升級版本號
-        public override string ModuleDescription => "Warmup Deagle Only - Fixed Event Name";
+        public override string ModuleVersion => "1.0.6"; // 升級版本號
+        public override string ModuleDescription => "Warmup Deagle Only - Fixed with Generic Event";
 
         private bool _warmupMessageSent = false;
         private static HashSet<string> AllowedWeapons = new();
@@ -22,15 +22,15 @@ namespace deagle_only
         {
             LoadConfig();
 
-            // 註冊事件：玩家出生與回合開始
+            // 註冊標準事件
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
             RegisterEventHandler<EventRoundStart>(OnRoundStart);
             
-            // 💡 修正：官方正確的事件名稱為 EventWarmupPeriodStart
-            RegisterEventHandler<EventWarmupPeriodStart>((@event, info) => {
+            // 💡 終極修正：直接監聽原生字串事件 "warmup_start"，避開所有類別名稱找不到的坑！
+            RegisterEventHandler((GameEvent @event, GameEventInfo info) => {
                 _warmupMessageSent = false;
                 return HookResult.Continue;
-            });
+            }, "warmup_start");
 
             // 換地圖或地圖重載時也重置旗標
             RegisterEventHandler<EventMapTransition>((@event, info) => {
@@ -98,7 +98,7 @@ namespace deagle_only
             if (_warmupMessageSent)
                 return HookResult.Continue;
 
-            Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 指令");
+            Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 令");
             _warmupMessageSent = true; 
             return HookResult.Continue;
         }
