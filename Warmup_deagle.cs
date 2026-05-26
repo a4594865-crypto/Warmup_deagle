@@ -2,6 +2,9 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace deagle_only
 {
@@ -9,8 +12,8 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO";
         public override string ModuleName => "Warmup_deagle";
-        public override string ModuleVersion => "1.0.3"; // 版本號微調
-        public override string ModuleDescription => "Warmup Deagle Only - Compatible Version";
+        public override string ModuleVersion => "1.0.4"; // 升級版本號
+        public override string ModuleDescription => "Warmup Deagle Only - Fixed Message Trigger";
 
         private bool _warmupMessageSent = false;
         private static HashSet<string> AllowedWeapons = new();
@@ -23,8 +26,17 @@ namespace deagle_only
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
             RegisterEventHandler<EventRoundStart>(OnRoundStart);
             
-            // 已移除 RegisterListener<Listeners.OnTick>(OnTick);
-            // 這樣就不會每幀強制刪除玩家身上的其他武器，增加與其他插件的相容性。
+            // 核心修正：監聽官方暖身啟動事件，只要開啟暖身，就重置訊息鎖，讓它能重新列印
+            RegisterEventHandler<EventWarmupStart>((@event, info) => {
+                _warmupMessageSent = false;
+                return HookResult.Continue;
+            });
+
+            // 保險：換地圖或地圖重載時也重置旗標
+            RegisterEventHandler<EventMapTransition>((@event, info) => {
+                _warmupMessageSent = false;
+                return HookResult.Continue;
+            });
         }
 
         private void LoadConfig()
@@ -78,17 +90,19 @@ namespace deagle_only
 
         private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
         {
+            // 如果當前根本不是暖身，直接跳出
             if (!IsWarmupActive())
             {
-                _warmupMessageSent = false;
                 return HookResult.Continue;
             }
 
+            // 如果這一輪暖身已經印過訊息了，就跳出
             if (_warmupMessageSent)
                 return HookResult.Continue;
 
+            // 成功印出廣播
             Server.PrintToChatAll($"[ {ChatColors.Green}熱身模式{ChatColors.Default} ] 現 在 處 於 {ChatColors.Lime}熱 身 緩 場 {ChatColors.Default} 換 槍 需 打 指 令");
-            _warmupMessageSent = true;
+            _warmupMessageSent = true; // 
             return HookResult.Continue;
         }
 
@@ -101,7 +115,6 @@ namespace deagle_only
             if (player == null || !player.IsValid)
                 return HookResult.Continue;
 
-            // 使用 NextFrame 確保在引擎處理完預設出生邏輯後再執行
             Server.NextFrame(() =>
             {
                 var pawn = player.PlayerPawn?.Value;
@@ -111,10 +124,8 @@ namespace deagle_only
                 if ((LifeState_t)pawn.LifeState != LifeState_t.LIFE_ALIVE)
                     return;
 
-                // 先移除身上非許可的武器
                 RemoveNonAllowedWeapons(player);
 
-                // 給予配置中允許的武器
                 foreach (var weapon in AllowedWeapons)
                 {
                     player.GiveNamedItem(weapon);
@@ -137,7 +148,6 @@ namespace deagle_only
 
                 var name = weapon.Value.DesignerName;
 
-                // 如果是設定檔中「不允許」的武器，才將其移除
                 if (!AllowedWeapons.Contains(name))
                 {
                     weapon.Value.AddEntityIOEvent(
