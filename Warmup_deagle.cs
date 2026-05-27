@@ -12,7 +12,7 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO & Custom Fix";
         public override string ModuleName => "Warmup_deagle_with_Fix";
-        public override string ModuleVersion => "1.0.6";
+        public override string ModuleVersion => "1.0.7";
         public override string ModuleDescription => "Warmup Deagle Only + First Join IME Fix";
 
         private static HashSet<string> AllowedWeapons = new();
@@ -20,7 +20,7 @@ namespace deagle_only
         // 記錄哪些玩家「剛進服」需要被解卡（剩餘的 Tick 數）
         private readonly Dictionary<int, int> _ticksToFix = new();
 
-        // 🔥 修正：改用 ulong (SteamID) 儲存，避免 AuthorizedID 的語法不相容問題
+        // 用來記錄「這局遊戲中，已經成功進服並解卡過的人」
         private readonly HashSet<ulong> _hasBeenFixed = new();
 
         public override void Load(bool hotReload)
@@ -39,8 +39,7 @@ namespace deagle_only
                 return HookResult.Continue;
             });
 
-            // 🔥 修正：使用全版本通用的 HookUserCmd 來代替 RegisterOnPlayerRunCmd
-            // 這會在伺服器處理玩家鍵盤輸入時觸發
+            // 🔥 修正 L57 唯讀問題：改用 pawn 裡面的 MovementServices 或者是實體 Buttons 來強行寫入
             RegisterListener<Listeners.OnTick>(() =>
             {
                 foreach (var player in Utilities.GetPlayers())
@@ -49,12 +48,20 @@ namespace deagle_only
 
                     if (_ticksToFix.TryGetValue(player.Slot, out int ticksLeft) && ticksLeft > 0)
                     {
-                        // 取得玩家當前的按鍵狀態並強行加上 WALK (SHIFT)
                         var pawn = player.PlayerPawn?.Value;
-                        if (pawn != null && pawn.MovementServices != null)
+                        if (pawn != null)
                         {
-                            // 修正：在 OnTick 中直接修改玩家 Pawn 的 Buttons 訊號
-                            player.Buttons |= PlayerButtons.Walk;
+                            // 💡 解決唯讀方案：有些版本的 CSS，PlayerPawn 的 Buttons 是可讀寫的欄位
+                            // 或者是修改其整數值。這裡我們直接幫他的 Pawn 加上 Walk 狀態
+                            if (pawn.MovementServices != null)
+                            {
+                                // 直接對 Pawn 的實體操作按鍵（強行疊加 Walk 狀態）
+                                ulong currentButtons = (ulong)player.Buttons;
+                                currentButtons |= (ulong)PlayerButtons.Walk;
+                                
+                                // 透過 SDK 提供的欄位，繞過 Controller 的唯讀限制
+                                player.PlayerPawn.Value!.MovementServices!.Buttons.Buttonstate[0] |= (ulong)PlayerButtons.Walk;
+                            }
                         }
 
                         _ticksToFix[player.Slot] = ticksLeft - 1;
@@ -89,7 +96,6 @@ namespace deagle_only
             var player = @event.Userid;
             if (player == null || !player.IsValid || player.IsBot) return HookResult.Continue;
 
-            // 🔥 修正：直接拿 player.SteamID，這在所有 CSS 版本都存在且不封裝
             ulong steamId = player.SteamID;
 
             // 檢查這個玩家有沒有被「解卡」過
@@ -121,7 +127,6 @@ namespace deagle_only
 
         private static void RemoveNonAllowedWeapons(CCSPlayerController player)
         {
-            // 🔥 修正：改回您原本正確的 player.PlayerPawn?.Value?.WeaponServices 路徑
             var weaponServices = player.PlayerPawn?.Value?.WeaponServices;
             if (weaponServices?.MyWeapons == null) return;
 
