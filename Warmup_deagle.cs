@@ -12,15 +12,12 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO & Custom Fix";
         public override string ModuleName => "Warmup_deagle_with_Fix";
-        public override string ModuleVersion => "1.0.8";
-        public override string ModuleDescription => "Warmup Deagle Only + First Join IME Fix";
+        public override string ModuleVersion => "1.0.9";
+        public override string ModuleDescription => "Warmup Deagle Only + Universal Teleport Fix";
 
         private static HashSet<string> AllowedWeapons = new();
 
-        // 記錄哪些玩家「剛進服」需要被解卡（剩餘的 Tick 數）
-        private readonly Dictionary<int, int> _ticksToFix = new();
-
-        // 用來記錄「這局遊戲中，已經成功進服並解卡過的人」
+        // 用來記錄這局遊戲中，哪些玩家已經成功進服被「震醒」過了
         private readonly HashSet<ulong> _hasBeenFixed = new();
 
         public override void Load(bool hotReload)
@@ -28,7 +25,7 @@ namespace deagle_only
             LoadConfig();
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
 
-            // 當玩家斷開連線時，清除紀錄
+            // 玩家斷線時清除紀錄，方便重連時再次觸發
             RegisterEventHandler<EventPlayerDisconnect>((@event, info) =>
             {
                 var player = @event.Userid;
@@ -37,34 +34,6 @@ namespace deagle_only
                     _hasBeenFixed.Remove(player.SteamID);
                 }
                 return HookResult.Continue;
-            });
-
-            // 🔥 完美修正 L63 報錯：使用官方標準的 SetButtons 方法
-            RegisterListener<Listeners.OnTick>(() =>
-            {
-                foreach (var player in Utilities.GetPlayers())
-                {
-                    if (player == null || !player.IsValid || player.IsBot) continue;
-
-                    if (_ticksToFix.TryGetValue(player.Slot, out int ticksLeft) && ticksLeft > 0)
-                    {
-                        // 1. 先抓出玩家目前的按鍵狀態
-                        var currentButtons = player.Buttons;
-
-                        // 2. 如果玩家目前還沒按著 SHIFT，我們就幫他加上去
-                        if ((currentButtons & PlayerButtons.Walk) == 0)
-                        {
-                            // 💡 核心：使用官方提供的方法強制寫入按鍵，避開所有唯讀與結構命名問題
-                            player.SetButtons(currentButtons | PlayerButtons.Walk, player.Buttons);
-                        }
-
-                        _ticksToFix[player.Slot] = ticksLeft - 1;
-                        if (_ticksToFix[player.Slot] <= 0)
-                        {
-                            _ticksToFix.Remove(player.Slot);
-                        }
-                    }
-                }
             });
         }
 
@@ -92,13 +61,24 @@ namespace deagle_only
 
             ulong steamId = player.SteamID;
 
-            // 檢查這個玩家有沒有被「解卡」過
+            // 🔥 核心解卡邏輯：如果是第一次進服出生的玩家
             if (steamId != 0 && !_hasBeenFixed.Contains(steamId))
             {
-                if (player.PlayerPawn.Value != null)
+                var pawn = player.PlayerPawn?.Value;
+                if (pawn != null)
                 {
-                    _ticksToFix[player.Slot] = 5; // 只有「第一次進服出生」才幫他按 5 次 Tick 的 SHIFT
-                    _hasBeenFixed.Add(steamId);   // 標記為已解卡
+                    _hasBeenFixed.Add(steamId); // 標記已處理，之後每回合出生直接跳過
+
+                    // 延遲到下一幀，等玩家實體完全載入後執行
+                    Server.NextFrame(() =>
+                    {
+                        if (pawn.IsValid && pawn.AbsOrigin != null)
+                        {
+                            // 💡 萬無一失的解卡法：強制原地傳送並歸零速度
+                            // 這會強迫 Sub-tick 系統發送最高優先級的座標同步封包給客戶端，瞬間解開輸入法死結！
+                            pawn.Teleport(pawn.AbsOrigin, pawn.AbsRotation, new Vector(0, 0, 0));
+                        }
+                    });
                 }
             }
 
