@@ -12,7 +12,7 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO & Custom Fix";
         public override string ModuleName => "Warmup_deagle_with_Fix";
-        public override string ModuleVersion => "1.0.7";
+        public override string ModuleVersion => "1.0.8";
         public override string ModuleDescription => "Warmup Deagle Only + First Join IME Fix";
 
         private static HashSet<string> AllowedWeapons = new();
@@ -39,7 +39,7 @@ namespace deagle_only
                 return HookResult.Continue;
             });
 
-            // 🔥 修正 L57 唯讀問題：改用 pawn 裡面的 MovementServices 或者是實體 Buttons 來強行寫入
+            // 🔥 完美修正 L63 報錯：使用官方標準的 SetButtons 方法
             RegisterListener<Listeners.OnTick>(() =>
             {
                 foreach (var player in Utilities.GetPlayers())
@@ -48,20 +48,14 @@ namespace deagle_only
 
                     if (_ticksToFix.TryGetValue(player.Slot, out int ticksLeft) && ticksLeft > 0)
                     {
-                        var pawn = player.PlayerPawn?.Value;
-                        if (pawn != null)
+                        // 1. 先抓出玩家目前的按鍵狀態
+                        var currentButtons = player.Buttons;
+
+                        // 2. 如果玩家目前還沒按著 SHIFT，我們就幫他加上去
+                        if ((currentButtons & PlayerButtons.Walk) == 0)
                         {
-                            // 💡 解決唯讀方案：有些版本的 CSS，PlayerPawn 的 Buttons 是可讀寫的欄位
-                            // 或者是修改其整數值。這裡我們直接幫他的 Pawn 加上 Walk 狀態
-                            if (pawn.MovementServices != null)
-                            {
-                                // 直接對 Pawn 的實體操作按鍵（強行疊加 Walk 狀態）
-                                ulong currentButtons = (ulong)player.Buttons;
-                                currentButtons |= (ulong)PlayerButtons.Walk;
-                                
-                                // 透過 SDK 提供的欄位，繞過 Controller 的唯讀限制
-                                player.PlayerPawn.Value!.MovementServices!.Buttons.Buttonstate[0] |= (ulong)PlayerButtons.Walk;
-                            }
+                            // 💡 核心：使用官方提供的方法強制寫入按鍵，避開所有唯讀與結構命名問題
+                            player.SetButtons(currentButtons | PlayerButtons.Walk, player.Buttons);
                         }
 
                         _ticksToFix[player.Slot] = ticksLeft - 1;
