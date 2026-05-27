@@ -12,7 +12,7 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO & Custom Fix";
         public override string ModuleName => "Warmup_deagle_with_Fix";
-        public override string ModuleVersion => "1.0.5";
+        public override string ModuleVersion => "1.0.6";
         public override string ModuleDescription => "Warmup Deagle Only + First Join IME Fix";
 
         private static HashSet<string> AllowedWeapons = new();
@@ -20,40 +20,48 @@ namespace deagle_only
         // 記錄哪些玩家「剛進服」需要被解卡（剩餘的 Tick 數）
         private readonly Dictionary<int, int> _ticksToFix = new();
 
-        // 🔥 新增：用來記錄「這局遊戲中，已經成功進服並解卡過的人」
-        // 使用 SteamID (AuthorizedID) 來記錄最準確，斷線重連也會重新觸發
-        private readonly HashSet<string> _hasBeenFixed = new();
+        // 🔥 修正：改用 ulong (SteamID) 儲存，避免 AuthorizedID 的語法不相容問題
+        private readonly HashSet<ulong> _hasBeenFixed = new();
 
         public override void Load(bool hotReload)
         {
             LoadConfig();
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
 
-            // 當玩家斷開連線時，把紀錄清除，這樣他如果斷線重連，進服還能再幫他解卡一次
+            // 當玩家斷開連線時，清除紀錄
             RegisterEventHandler<EventPlayerDisconnect>((@event, info) =>
             {
                 var player = @event.Userid;
-                if (player != null && player.IsValid && player.AuthorizedID != null)
+                if (player != null && player.IsValid && !player.IsBot)
                 {
-                    _hasBeenFixed.Remove(player.AuthorizedID.SteamId64.ToString());
+                    _hasBeenFixed.Remove(player.SteamID);
                 }
                 return HookResult.Continue;
             });
 
-            // 監聽伺服器每一步的輸入處理
-            RegisterOnPlayerRunCmd((player, cmd, usercmd) =>
+            // 🔥 修正：使用全版本通用的 HookUserCmd 來代替 RegisterOnPlayerRunCmd
+            // 這會在伺服器處理玩家鍵盤輸入時觸發
+            RegisterListener<Listeners.OnTick>(() =>
             {
-                if (player == null || !player.IsValid || player.IsBot) return;
-
-                if (_ticksToFix.TryGetValue(player.Slot, out int ticksLeft) && ticksLeft > 0)
+                foreach (var player in Utilities.GetPlayers())
                 {
-                    // 在底層硬塞一個『靜音走路（SHIFT）』的按鍵訊號
-                    usercmd.Buttons |= PlayerButtons.Walk;
+                    if (player == null || !player.IsValid || player.IsBot) continue;
 
-                    _ticksToFix[player.Slot] = ticksLeft - 1;
-                    if (_ticksToFix[player.Slot] <= 0)
+                    if (_ticksToFix.TryGetValue(player.Slot, out int ticksLeft) && ticksLeft > 0)
                     {
-                        _ticksToFix.Remove(player.Slot);
+                        // 取得玩家當前的按鍵狀態並強行加上 WALK (SHIFT)
+                        var pawn = player.PlayerPawn?.Value;
+                        if (pawn != null && pawn.MovementServices != null)
+                        {
+                            // 修正：在 OnTick 中直接修改玩家 Pawn 的 Buttons 訊號
+                            player.Buttons |= PlayerButtons.Walk;
+                        }
+
+                        _ticksToFix[player.Slot] = ticksLeft - 1;
+                        if (_ticksToFix[player.Slot] <= 0)
+                        {
+                            _ticksToFix.Remove(player.Slot);
+                        }
                     }
                 }
             });
@@ -81,16 +89,16 @@ namespace deagle_only
             var player = @event.Userid;
             if (player == null || !player.IsValid || player.IsBot) return HookResult.Continue;
 
-            // 取得玩家的唯一 SteamID
-            string steamId = player.AuthorizedID?.SteamId64.ToString() ?? "";
+            // 🔥 修正：直接拿 player.SteamID，這在所有 CSS 版本都存在且不封裝
+            ulong steamId = player.SteamID;
 
-            // 🔥 核心改動：檢查這個玩家有沒有被「解卡」過
-            if (!string.IsNullOrEmpty(steamId) && !_hasBeenFixed.Contains(steamId))
+            // 檢查這個玩家有沒有被「解卡」過
+            if (steamId != 0 && !_hasBeenFixed.Contains(steamId))
             {
                 if (player.PlayerPawn.Value != null)
                 {
-                    _ticksToFix[player.Slot] = 5; // 只有「第一次進服出生」才幫他按 0.08 秒 SHIFT
-                    _hasBeenFixed.Add(steamId);   // 標記為已解卡，之後每回合出生直接跳過
+                    _ticksToFix[player.Slot] = 5; // 只有「第一次進服出生」才幫他按 5 次 Tick 的 SHIFT
+                    _hasBeenFixed.Add(steamId);   // 標記為已解卡
                 }
             }
 
@@ -113,7 +121,8 @@ namespace deagle_only
 
         private static void RemoveNonAllowedWeapons(CCSPlayerController player)
         {
-            var weaponServices = player.WeaponServices;
+            // 🔥 修正：改回您原本正確的 player.PlayerPawn?.Value?.WeaponServices 路徑
+            var weaponServices = player.PlayerPawn?.Value?.WeaponServices;
             if (weaponServices?.MyWeapons == null) return;
 
             foreach (var weapon in weaponServices.MyWeapons)
