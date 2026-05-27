@@ -12,26 +12,28 @@ namespace deagle_only
     {
         public override string ModuleAuthor => "GSM-RO & Custom Fix";
         public override string ModuleName => "Warmup_deagle_with_Fix";
-        public override string ModuleVersion => "1.0.9";
-        public override string ModuleDescription => "Warmup Deagle Only + Universal Teleport Fix";
+        public override string ModuleVersion => "1.1.1";
+        public override string ModuleDescription => "Warmup Deagle Only + First Spawn Teleport Fix";
 
         private static HashSet<string> AllowedWeapons = new();
 
-        // 用來記錄這局遊戲中，哪些玩家已經成功進服被「震醒」過了
-        private readonly HashSet<ulong> _hasBeenFixed = new();
+        // 🔥 核心：用來記錄「這局遊戲中，已經成功進服並被震醒過的人」
+        // 使用玩家的 Slot（通道編號）來記錄，最輕量且完全不吃記憶體
+        private readonly HashSet<int> _hasBeenFixed = new();
 
         public override void Load(bool hotReload)
         {
             LoadConfig();
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
 
-            // 玩家斷線時清除紀錄，方便重連時再次觸發
+            // 當玩家完全斷開連線、離開伺服器時，才把他的編號從名單移除
+            // 這樣他如果下一局重新連線進來，才能再次幫他解卡
             RegisterEventHandler<EventPlayerDisconnect>((@event, info) =>
             {
                 var player = @event.Userid;
-                if (player != null && player.IsValid && !player.IsBot)
+                if (player != null && player.IsValid)
                 {
-                    _hasBeenFixed.Remove(player.SteamID);
+                    _hasBeenFixed.Remove(player.Slot);
                 }
                 return HookResult.Continue;
             });
@@ -59,23 +61,21 @@ namespace deagle_only
             var player = @event.Userid;
             if (player == null || !player.IsValid || player.IsBot) return HookResult.Continue;
 
-            ulong steamId = player.SteamID;
-
-            // 🔥 核心解卡邏輯：如果是第一次進服出生的玩家
-            if (steamId != 0 && !_hasBeenFixed.Contains(steamId))
+            // 🔥 完美解卡機制：檢查這個玩家「進服後，有沒有被拯救過？」
+            if (!_hasBeenFixed.Contains(player.Slot))
             {
                 var pawn = player.PlayerPawn?.Value;
                 if (pawn != null)
                 {
-                    _hasBeenFixed.Add(steamId); // 標記已處理，之後每回合出生直接跳過
+                    // 1. 既然抓到他第一次出生了，立刻把他寫入白名單！
+                    _hasBeenFixed.Add(player.Slot);
 
-                    // 延遲到下一幀，等玩家實體完全載入後執行
+                    // 2. 延遲到下一幀（萬分之一秒後，等他的身體在遊戲世界中完全站好）執行
                     Server.NextFrame(() =>
                     {
                         if (pawn.IsValid && pawn.AbsOrigin != null)
                         {
-                            // 💡 萬無一失的解卡法：強制原地傳送並歸零速度
-                            // 這會強迫 Sub-tick 系統發送最高優先級的座標同步封包給客戶端，瞬間解開輸入法死結！
+                            // 3. 原地重置座標與速度，強制踢醒客戶端的移動預測，衝破輸入法死結！
                             pawn.Teleport(pawn.AbsOrigin, pawn.AbsRotation, new Vector(0, 0, 0));
                         }
                     });
