@@ -31,7 +31,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Warmup_deagle_Package
-          # 這裡對應你 .csproj 裡的 OutputPath，但在 Linux 系統需使用正斜線 /
-          # 它會抓取該資料夾下所有的檔案（包含 .dll 和 config.cfg）
           path: bin/Release/addons/counterstrikesharp/plugins/Warmup_deagle/
           if-no-files-found: error
